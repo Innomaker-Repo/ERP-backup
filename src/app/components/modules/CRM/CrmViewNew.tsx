@@ -1329,7 +1329,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
       </div>
 
       {/* KANBAN BOARD */}
-      <div className="grid grid-cols-4 gap-6 min-h-[600px]">
+      <div className="flex gap-4 sm:gap-5 lg:gap-6 min-h-[600px] overflow-x-auto overflow-y-hidden pb-4 pr-2 snap-x snap-mandatory">
         {COLUNAS.map((coluna) => {
           const IconColuna = coluna.icon;
           const obrasNaColuna = obrasOrdenadas.filter((obra: any) => obra.categoria === coluna.id);
@@ -1353,9 +1353,9 @@ Geração: ${new Date().toLocaleString('pt-BR')}
           }[coluna.cor];
 
           return (
-            <div key={coluna.id} className={`rounded-2xl border ${corClasse} p-6 flex flex-col`}>
+            <div key={coluna.id} className={`rounded-2xl border ${corClasse} p-4 sm:p-5 lg:p-6 flex flex-col flex-none w-[280px] sm:w-[300px] lg:w-[320px] xl:w-[340px] 2xl:w-[360px] snap-start`}>
               {/* Header da Coluna */}
-              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/10">
+              <div className="flex items-center gap-3 mb-4 sm:mb-5 lg:mb-6 pb-3 sm:pb-4 border-b border-white/10">
                 <div className={`p-2 rounded-lg ${corBg}`}>
                   <IconColuna size={20} className={corTexto} />
                 </div>
@@ -1418,22 +1418,22 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                         }`}
                       >
                         {/* Header com Nome e Badge de Status + Editar */}
-                        <div className="flex justify-between items-start gap-2 mb-2">
-                          <h4 className="font-black text-white text-sm line-clamp-2 flex-1">
+                        <div className="mb-2 space-y-2">
+                          <h4 className="font-black text-white text-sm leading-tight line-clamp-2 break-words">
                             {obra.nome}
                           </h4>
                           {/* Badge + Botão Editar na Direita */}
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1 sm:gap-1.5">
                             {/* Badge Orçado/Pendente em Planejamento */}
                             {coluna.id === 'Planejamento' && (
                               <>
                                 {temOrcamentoAtivo ? (
-                                  <div className="px-2 py-1 bg-emerald-500/20 border border-emerald-500/40 rounded-full whitespace-nowrap">
-                                    <span className="text-emerald-300 text-[11px] font-black">Orçado</span>
+                                  <div className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-full whitespace-nowrap">
+                                    <span className="text-emerald-300 text-[10px] font-black">Orçado</span>
                                   </div>
                                 ) : (
-                                  <div className="px-2 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
-                                    <span className="text-amber-300 text-xs font-black">Aguardando orçamento</span>
+                                  <div className="px-1.5 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
+                                    <span className="text-amber-300 text-[10px] font-black">Aguard. orçamento</span>
                                   </div>
                                 )}
                               </>
@@ -1442,12 +1442,12 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                             {coluna.id === 'Negociação' && (
                               <>
                                 {propostaAtiva ? (
-                                  <div className="px-2 py-1 bg-cyan-500/20 border border-cyan-500/40 rounded-full whitespace-nowrap">
-                                    <span className="text-cyan-300 text-xs font-black">Proposta</span>
+                                  <div className="px-1.5 py-0.5 bg-cyan-500/20 border border-cyan-500/40 rounded-full whitespace-nowrap">
+                                    <span className="text-cyan-300 text-[10px] font-black">Proposta</span>
                                   </div>
                                 ) : (
-                                  <div className="px-2 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
-                                    <span className="text-amber-300 text-xs font-black">Aguardando proposta</span>
+                                  <div className="px-1.5 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
+                                    <span className="text-amber-300 text-[10px] font-black">Aguard. proposta</span>
                                   </div>
                                 )}
                               </>
@@ -1465,16 +1465,16 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                               return (
                                 <>
                                   {osProntaFinalizacao ? (
-                                    <div className="px-2 py-1 bg-emerald-500/20 border border-emerald-500/40 rounded-full whitespace-nowrap">
-                                      <span className="text-emerald-300 text-xs font-black">Pronta Finalização</span>
+                                    <div className="px-1.5 py-0.5 bg-emerald-500/20 border border-emerald-500/40 rounded-full whitespace-nowrap">
+                                      <span className="text-emerald-300 text-[10px] font-black">Pronta Finalização</span>
                                     </div>
                                   ) : osEnviada ? (
-                                    <div className="px-2 py-1 bg-green-500/20 border border-green-500/40 rounded-full whitespace-nowrap">
-                                      <span className="text-green-300 text-xs font-black">OS Enviada</span>
+                                    <div className="px-1.5 py-0.5 bg-green-500/20 border border-green-500/40 rounded-full whitespace-nowrap">
+                                      <span className="text-green-300 text-[10px] font-black">OS Enviada</span>
                                     </div>
                                   ) : (
-                                    <div className="px-2 py-1 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
-                                      <span className="text-amber-300 text-xs font-black">Aguardando OS</span>
+                                    <div className="px-1.5 py-0.5 bg-amber-500/20 border border-amber-500/40 rounded-full whitespace-nowrap">
+                                      <span className="text-amber-300 text-[10px] font-black">Aguard. OS</span>
                                     </div>
                                   )}
                                 </>
@@ -1487,9 +1487,9 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                                   e.stopPropagation();
                                   handleEditObra(obra);
                                 }}
-                                className="px-2.5 py-1 bg-gradient-to-r from-blue-500/30 to-blue-600/30 hover:from-blue-500/50 hover:to-blue-600/50 border border-blue-400/40 text-blue-300 hover:text-blue-200 rounded transition-all text-xs font-black uppercase tracking-wide"
+                                className="px-1.5 sm:px-2.5 py-0.5 sm:py-1 bg-gradient-to-r from-blue-500/30 to-blue-600/30 hover:from-blue-500/50 hover:to-blue-600/50 border border-blue-400/40 text-blue-300 hover:text-blue-200 rounded transition-all text-[10px] sm:text-xs font-black uppercase tracking-wide"
                               >
-                                <Edit2 size={13} className="inline mr-1" /> Editar
+                                <Edit2 size={12} className="inline mr-1" /> Editar
                               </button>
                             )}
                           </div>
@@ -1509,8 +1509,8 @@ Geração: ${new Date().toLocaleString('pt-BR')}
 
                         {/* Serviços Badge (apenas quantidade) */}
                         {obra.servicos && obra.servicos.length > 0 && (
-                          <div className="text-xs font-bold mb-2">
-                            <span className="px-2 py-1 bg-purple-500/20 text-purple-400 rounded">
+                          <div className="text-[10px] font-bold mb-2">
+                            <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
                               {obra.servicos.length} serv.
                             </span>
                           </div>
@@ -2471,11 +2471,11 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                       <h3 className="text-purple-400 font-black text-lg">ORDEM DE SERVIÇO ({osDoNegocio.length})</h3>
                       <div className="flex items-center gap-2">
                         {osProntaFinalizacao ? (
-                          <span className="px-3 py-1 bg-emerald-500/30 border border-emerald-500/50 rounded-full text-emerald-300 text-xs font-black">Pronta p/ Finalização</span>
+                          <span className="px-2 py-0.5 bg-emerald-500/30 border border-emerald-500/50 rounded-full text-emerald-300 text-[10px] font-black">Pronta p/ Finalização</span>
                         ) : osEnviada ? (
-                          <span className="px-3 py-1 bg-green-500/30 border border-green-500/50 rounded-full text-green-300 text-xs font-black">OS Enviada</span>
+                          <span className="px-2 py-0.5 bg-green-500/30 border border-green-500/50 rounded-full text-green-300 text-[10px] font-black">OS Enviada</span>
                         ) : (
-                          <span className="px-3 py-1 bg-amber-500/30 border border-amber-500/50 rounded-full text-amber-300 text-xs font-black">Aguardando OS</span>
+                          <span className="px-2 py-0.5 bg-amber-500/30 border border-amber-500/50 rounded-full text-amber-300 text-[10px] font-black">Aguard. OS</span>
                         )}
                       </div>
                     </div>

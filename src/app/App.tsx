@@ -58,19 +58,6 @@ export default function App() {
   const [activeSection, setActiveSection] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // 0. Modo de Teste: Injetar um utilizador ADMIN se não houver login
-  // COMENTADO: Usuário ADMIN agora já é injetado no ErpContext
-  // useEffect(() => {
-  //   if (!loading && !userSession) {
-  //     setUserSession({
-  //       email: 'admin@modo-teste.com',
-  //       role: 'ADMIN',
-  //       nome: 'Administrador (Teste)',
-  //       permissoes: {} // O Admin tem acesso a tudo por padrão na lógica da Sidebar
-  //     });
-  //   }
-  // }, [userSession, loading, setUserSession]);
-
   // 1. Tela de Carregamento
   if (loading) {
     return (
