@@ -163,6 +163,152 @@ export function ObrasView({ searchQuery }: { searchQuery: string }) {
       .map((key) => A_SER_INCLUIDO_LABELS[key] || key);
   };
 
+  const normalizarEscopoBasicoServicos = (proposta?: any) => {
+    if (Array.isArray(proposta?.escopoBasicoServicos)) {
+      return proposta.escopoBasicoServicos;
+    }
+
+    const textoEscopo = typeof proposta?.escopoBasicoServicos === 'string'
+      ? proposta.escopoBasicoServicos.trim()
+      : '';
+
+    if (!textoEscopo) {
+      return [];
+    }
+
+    return [
+      {
+        id: 'escopo-basico-texto',
+        servicoId: 'escopo-basico-texto',
+        titulo: proposta?.escopoA || 'A - Escopo Básico de Serviços',
+        descricaoServico: textoEscopo.split('\n')[0] || textoEscopo,
+        texto: textoEscopo,
+        colunas: ['Descrição'],
+        linhas: [
+          {
+            id: 'linha-1',
+            valores: { Descrição: textoEscopo }
+          }
+        ]
+      }
+    ];
+  };
+
+  const construirResumoConsolidado = (item: any) => {
+    const obraRelacionada = listaObras.find((obra: any) => obra.id === item?.obraId);
+    const orcamentoBase = (Array.isArray(obraRelacionada?.orcamentos) && obraRelacionada.orcamentos.length > 0)
+      ? obraRelacionada.orcamentos[obraRelacionada.orcamentos.length - 1]
+      : (Array.isArray(item?.orcamentos) && item.orcamentos.length > 0)
+        ? item.orcamentos[item.orcamentos.length - 1]
+        : null;
+    const propostaBase = (Array.isArray(obraRelacionada?.propostas) && obraRelacionada.propostas.length > 0)
+      ? obraRelacionada.propostas[obraRelacionada.propostas.length - 1]
+      : (Array.isArray(item?.propostas) && item.propostas.length > 0)
+        ? item.propostas[item.propostas.length - 1]
+        : null;
+
+    const servicosDoNegocio = Array.isArray(obraRelacionada?.servicos)
+      ? obraRelacionada.servicos
+      : Array.isArray(item?.servicos)
+        ? item.servicos
+        : [];
+
+    const dadosServicos = Array.isArray(orcamentoBase?.data?.dadosServicos) && orcamentoBase.data.dadosServicos.length > 0
+      ? orcamentoBase.data.dadosServicos
+      : servicosDoNegocio.map((servico: any, idx: number) => ({
+          ordem: idx + 1,
+          tipo: servico.tipo || 'Serviço',
+          categoria: servico.categoria || '',
+          embarcacao: servico.embarcacao || '',
+          localExecucao: servico.localExecucao || '',
+          porto: servico.porto || '',
+          prazoDes: servico.prazoDes || '',
+          descricao: servico.descricao || '',
+          observacoes: servico.observacoes || ''
+        }));
+
+    return {
+      negocio: {
+        nome: item?.projeto || obraRelacionada?.nome || '',
+        solicitante: obraRelacionada?.solicitante || orcamentoBase?.data?.solicitante || '',
+        responsavelComercial: obraRelacionada?.responsavelComercial || orcamentoBase?.data?.responsavelComercial || '',
+        responsavelTecnico: obraRelacionada?.responsavelTecnico || '',
+        dataSolicitacao: obraRelacionada?.dataSolicitacao || obraRelacionada?.dataCadastro || orcamentoBase?.dataCriacao || '',
+        servicos: servicosDoNegocio.map((servico: any, idx: number) => ({
+          ordem: idx + 1,
+          tipo: servico.tipo || 'Serviço',
+          categoria: servico.categoria || '',
+          localExecucao: servico.localExecucao || '',
+          porto: servico.porto || '',
+          descricao: servico.descricao || '',
+          observacoes: servico.observacoes || ''
+        }))
+      },
+      orcamento: {
+        numeroOrcamento: orcamentoBase?.numeroOrcamento || '',
+        versao: orcamentoBase?.versao || '',
+        dataCriacao: orcamentoBase?.dataCriacao || '',
+        escopoOrcamento: orcamentoBase?.data?.escopoOrcamento || '',
+        documentosReferencia: orcamentoBase?.data?.documentosReferencia || '',
+        dadosServicos,
+        maoDeObra: Array.isArray(orcamentoBase?.data?.maoDeObra)
+          ? orcamentoBase.data.maoDeObra.map((itemMao: any) => ({
+              funcao: itemMao.funcao || '',
+              quantidade: itemMao.quantidade || '',
+              dias: itemMao.dias || '',
+              observacao: itemMao.observacao || ''
+            }))
+          : [],
+        atividades: Array.isArray(orcamentoBase?.data?.atividades)
+          ? orcamentoBase.data.atividades.map((atividade: any) => ({
+              atividade: atividade.atividade || '',
+              dias: atividade.dias || '',
+              observacao: atividade.observacao || ''
+            }))
+          : [],
+        materiais: Array.isArray(orcamentoBase?.data?.materiais)
+          ? orcamentoBase.data.materiais.map((material: any) => ({
+              descricao: material.descricao || '',
+              unidade: material.unidade || '',
+              quantidade: material.quantidade || '',
+              pesoFator: material.pesoFator || '',
+              observacao: material.observacao || '',
+              origemTerceiros: material.origemTerceiros || ''
+            }))
+          : [],
+        terceirizados: Array.isArray(orcamentoBase?.data?.terceirizados)
+          ? orcamentoBase.data.terceirizados.map((terceirizado: any) => ({
+              descricao: terceirizado.descricao || '',
+              unidade: terceirizado.unidade || '',
+              quantidade: terceirizado.quantidade || '',
+              pesoFator: terceirizado.pesoFator || '',
+              observacao: terceirizado.observacao || ''
+            }))
+          : [],
+        observacoes: orcamentoBase?.data?.observacoes || ''
+      },
+      proposta: {
+        numeroProposta: propostaBase?.numeroProposta || '',
+        versao: propostaBase?.versao || '',
+        status: propostaBase?.status || '',
+        dataCriacao: propostaBase?.dataCriacao || '',
+        assunto: propostaBase?.assunto || '',
+        textoAbertura: propostaBase?.textoAbertura || '',
+        escopoA: propostaBase?.escopoA || propostaBase?.escopoBasicoServicos || '',
+        escopoBasicoServicos: normalizarEscopoBasicoServicos(propostaBase),
+        responsabilidadeContratada: propostaBase?.responsabilidadeContratada || '',
+        escopoC: propostaBase?.escopoC || '',
+        referencias: propostaBase?.referencias || '',
+        condicoesGerais: propostaBase?.condicoesGerais || '',
+        condicoesPagamento: propostaBase?.condicoesPagamento || '',
+        prazo: propostaBase?.prazo || '',
+        encerramento: propostaBase?.encerramento || '',
+        assinaturaNome: propostaBase?.assinaturaNome || '',
+        assinaturaCargo: propostaBase?.assinaturaCargo || ''
+      }
+    };
+  };
+
   const dataUrlToBlob = (dataUrl: string) => {
     const parts = dataUrl.split(',');
     if (parts.length < 2) return null;
@@ -206,7 +352,16 @@ export function ObrasView({ searchQuery }: { searchQuery: string }) {
   };
 
   const handleVisualizarOSConsolidada = (item: any) => {
-    setSelectedOSConsolidada(item);
+    const resumoConsolidado = construirResumoConsolidado(item);
+    setSelectedOSConsolidada({
+      ...item,
+      cliente: item?.cliente || listaClientes.find((cliente: any) => cliente.id === item?.clienteId)?.razaoSocial || '-',
+      projeto: item?.projeto || listaObras.find((obra: any) => obra.id === item?.obraId)?.nome || '-',
+      dataInicioPrevisto: item?.dataInicioPrevisto || item?.inicioPrevisto || listaObras.find((obra: any) => obra.id === item?.obraId)?.dataPrevistaInicio || '-',
+      dataTerminoPrevisto: item?.dataTerminoPrevisto || item?.fimPrevisto || listaObras.find((obra: any) => obra.id === item?.obraId)?.dataPrevistaFinal || '-',
+      descricaoGeralServico: item?.descricaoGeralServico || resumoConsolidado.orcamento.escopoOrcamento || resumoConsolidado.negocio.servicos.map((servico: any) => servico.descricao).filter(Boolean).join('\n') || '',
+      resumoConsolidado
+    });
     setShowOSConsolidadaModal(true);
   };
 
@@ -562,41 +717,6 @@ export function ObrasView({ searchQuery }: { searchQuery: string }) {
                   <p className="text-white font-bold text-base mb-1">Item A - Escopo Básico</p>
                   <p className="whitespace-pre-wrap">{selectedOSConsolidada.resumoConsolidado?.proposta?.escopoA || '-'}</p>
                 </div>
-                {(selectedOSConsolidada.resumoConsolidado?.proposta?.escopoBasicoServicos || []).length > 0 ? (
-                  (selectedOSConsolidada.resumoConsolidado?.proposta?.escopoBasicoServicos || []).map((escopo: any, idx: number) => (
-                    <div key={`escopo-prod-${idx}`} className="bg-[#101f3d] rounded-lg border border-white/10 p-4 space-y-2">
-                      <p className="text-white font-bold text-base">{escopo.titulo || `Escopo ${idx + 1}`}</p>
-                      {escopo.descricaoServico && <p className="text-white/80 text-sm">{escopo.descricaoServico}</p>}
-                      <p className="text-white/60 text-sm">Itens: {(Array.isArray(escopo.linhas) ? escopo.linhas.length : 0)}</p>
-                      {Array.isArray(escopo.colunas) && escopo.colunas.length > 0 && (
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm text-left border border-white/10">
-                            <thead className="bg-white/5 text-white/70">
-                              <tr>
-                                <th className="px-2 py-1 border border-white/10">Item</th>
-                                {escopo.colunas.map((coluna: string) => (
-                                  <th key={`${idx}-${coluna}`} className="px-2 py-1 border border-white/10">{coluna}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {(escopo.linhas || []).map((linha: any, linhaIdx: number) => (
-                                <tr key={`${idx}-linha-${linhaIdx}`} className="text-white/80">
-                                  <td className="px-2 py-1 border border-white/10">{linhaIdx + 1}</td>
-                                  {escopo.colunas.map((coluna: string) => (
-                                    <td key={`${idx}-${linhaIdx}-${coluna}`} className="px-2 py-1 border border-white/10">{linha.valores?.[coluna] || '-'}</td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-white/40 text-sm">Sem escopo da proposta disponível.</p>
-                )}
               </div>
 
               <div className="flex justify-end pt-2">

@@ -3,39 +3,6 @@ import { useErp } from '../../../context/ErpContext';
 import { Plus, X, FileText, DollarSign, CheckCircle, Clock, ArrowRight, Edit2, ChevronDown, Zap, AlertCircle, Download, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
-const CLIENTES_MOCK = [
-  {
-    id: 'CLI-1',
-    razaoSocial: 'Linave Construções LTDA',
-    nomeFantasia: 'Linave',
-    cnpj: '12.345.678/0001-90'
-  },
-  {
-    id: 'CLI-2',
-    razaoSocial: 'Construtora Alpha S.A.',
-    nomeFantasia: 'Alpha Construtora',
-    cnpj: '23.456.789/0001-01'
-  },
-  {
-    id: 'CLI-3',
-    razaoSocial: 'TC Engenharia e Consultoria',
-    nomeFantasia: 'TC Engenharia',
-    cnpj: '34.567.890/0001-12'
-  },
-  {
-    id: 'CLI-4',
-    razaoSocial: 'Projetos Marítimos LTDA',
-    nomeFantasia: 'ProMar',
-    cnpj: '45.678.901/0001-23'
-  },
-  {
-    id: 'CLI-5',
-    razaoSocial: 'Estaleiro Industrial do Sudeste',
-    nomeFantasia: 'EISE',
-    cnpj: '56.789.012/0001-34'
-  }
-];
-
 interface Servico {
   id: string;
   tipo: string;
@@ -62,8 +29,9 @@ interface LinhaTabelaMediacao {
   item: string;
   descricao: string;
   unidade: string;
-  previsto: string;
-  realizado: string;
+  quantidadeProduzida: string;
+  valorUnitario: string;
+  total: string;
   observacoes: string;
 }
 
@@ -131,6 +99,8 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
   const [selectedObraArquivos, setSelectedObraArquivos] = useState<any>(null);
   const [showDocumentoMediacaoModal, setShowDocumentoMediacaoModal] = useState(false);
   const [documentoMediacaoForm, setDocumentoMediacaoForm] = useState<DocumentoMediacaoForm | null>(null);
+  const [showDocumentoPreviewModal, setShowDocumentoPreviewModal] = useState(false);
+  const [documentoVisualizado, setDocumentoVisualizado] = useState<any>(null);
 
   const indexToVersaoAlfabetica = (index: number) => {
     if (index < 0) return 'A';
@@ -167,6 +137,65 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
     }
 
     return 'A';
+  };
+
+  const formatarEscopoBasicoParaTexto = (escopo: any) => {
+    if (!escopo) {
+      return '−';
+    }
+
+    if (typeof escopo === 'string') {
+      return escopo;
+    }
+
+    const formatarItemEscopo = (item: any, index: number) => {
+      if (!item) return '';
+      if (typeof item === 'string') return item;
+
+      const partes = [item.titulo, item.descricaoServico, item.texto].filter(
+        (valor) => typeof valor === 'string' && valor.trim(),
+      );
+
+      if (Array.isArray(item.linhas) && item.linhas.length > 0) {
+        const linhas = item.linhas
+          .map((linha: any) => {
+            if (!linha?.valores || typeof linha.valores !== 'object') {
+              return '';
+            }
+
+            const valores = Object.values(linha.valores)
+              .filter((valor) => typeof valor === 'string' ? valor.trim() : Boolean(valor))
+              .map((valor) => String(valor).trim())
+              .filter(Boolean);
+
+            return valores.length > 0 ? `- ${valores.join(' | ')}` : '';
+          })
+          .filter(Boolean);
+
+        if (linhas.length > 0) {
+          partes.push(linhas.join('\n'));
+        }
+      }
+
+      if (partes.length === 0) {
+        return `Item ${index + 1}`;
+      }
+
+      return partes.join('\n');
+    };
+
+    if (Array.isArray(escopo)) {
+      return escopo
+        .map((item, index) => formatarItemEscopo(item, index))
+        .filter(Boolean)
+        .join('\n\n');
+    }
+
+    if (typeof escopo === 'object') {
+      return formatarItemEscopo(escopo, 0);
+    }
+
+    return String(escopo);
   };
 
   const initialServico: Servico = {
@@ -244,6 +273,16 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const parseDecimal = (value: string) => {
+    const normalized = String(value || '').trim();
+    const parsed = normalized.includes(',')
+      ? Number(normalized.replace(/\./g, '').replace(',', '.'))
+      : Number(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const formatDecimal = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
+
   const gerarIdLinha = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
   const novaLinhaTabelaMediacao = (): LinhaTabelaMediacao => ({
@@ -251,8 +290,9 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
     item: '',
     descricao: '',
     unidade: '',
-    previsto: '',
-    realizado: '',
+    quantidadeProduzida: '',
+    valorUnitario: '',
+    total: '0.00',
     observacoes: ''
   });
 
@@ -317,11 +357,23 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
   const atualizarLinhaTabelaItens = (linhaId: string, campo: keyof LinhaTabelaMediacao, valor: string) => {
     setDocumentoMediacaoForm((prev) => {
       if (!prev) return prev;
+      const tabelaItens = prev.tabelaItens.map((linha) => {
+        if (linha.id !== linhaId) return linha;
+
+        const proximaLinha = { ...linha, [campo]: valor };
+        const quantidade = parseDecimal(proximaLinha.quantidadeProduzida);
+        const valorUnitario = parseDecimal(proximaLinha.valorUnitario);
+        const total = quantidade * valorUnitario;
+
+        return {
+          ...proximaLinha,
+          total: formatDecimal(total)
+        };
+      });
+
       return {
         ...prev,
-        tabelaItens: prev.tabelaItens.map((linha) => (
-          linha.id === linhaId ? { ...linha, [campo]: valor } : linha
-        ))
+        tabelaItens
       };
     });
   };
@@ -384,64 +436,56 @@ export function CrmViewNew({ searchQuery }: CrmViewProps) {
     if (!documentoMediacaoForm) return;
 
     if (!documentoMediacaoForm.embarcacao.trim()) {
-      toast.error('Preencha a embarcacao para gerar o documento de medicao.');
+      toast.error('Preencha a embarcação para gerar o documento de medição.');
       return;
     }
 
     const obraReferencia = (obras || []).find((item: any) => item.id === documentoMediacaoForm.obraId) || selectedObraDetalhes;
     const nomeNegocio = obraReferencia?.nome || 'Negocio';
     const dataGeracao = new Date().toLocaleString('pt-BR');
+    const totalGeralMediacao = documentoMediacaoForm.tabelaItens.reduce((soma, linha) => soma + parseDecimal(linha.total), 0);
 
     const blocoItens = documentoMediacaoForm.tabelaItens
       .map((linha, index) => (
         `${index + 1}. Item: ${linha.item || '-'}\n` +
         `   Descricao: ${linha.descricao || '-'}\n` +
         `   Unidade: ${linha.unidade || '-'}\n` +
-        `   Previsto: ${linha.previsto || '-'}\n` +
-        `   Realizado: ${linha.realizado || '-'}\n` +
-        `   Observacoes: ${linha.observacoes || '-'}\n`
-      ))
-      .join('\n');
-
-    const blocoRecursos = documentoMediacaoForm.tabelaRecursos
-      .map((linha, index) => (
-        `${index + 1}. Recurso: ${linha.recurso || '-'}\n` +
-        `   Funcao: ${linha.funcao || '-'}\n` +
-        `   Periodo: ${linha.periodo || '-'}\n` +
-        `   Horas: ${linha.horas || '-'}\n` +
+        `   Quantidade produzida: ${linha.quantidadeProduzida || '-'}\n` +
+        `   Valor por unidade: ${linha.valorUnitario || '-'}\n` +
+        `   Total: ${linha.total || '0.00'}\n` +
         `   Observacoes: ${linha.observacoes || '-'}\n`
       ))
       .join('\n');
 
     const conteudo = `
 ================================================================================
-                    DOCUMENTO DE MEDICAO
+                    DOCUMENTO DE MEDIÇÃO
 ================================================================================
 
 Empresa: ${documentoMediacaoForm.empresa}
 Cliente: ${documentoMediacaoForm.cliente}
 CNPJ: ${documentoMediacaoForm.cnpj || '-'}
 Negocio: ${nomeNegocio}
-Data emissao: ${formatarDataInputParaBr(documentoMediacaoForm.dataEmissao)}
-Embarcacao: ${documentoMediacaoForm.embarcacao}
+Data de emissão: ${formatarDataInputParaBr(documentoMediacaoForm.dataEmissao)}
+Embarcação: ${documentoMediacaoForm.embarcacao}
 Nr. BM: ${documentoMediacaoForm.numeroBM || '-'}
-Periodo: ${documentoMediacaoForm.periodo || '-'}
+Período: ${documentoMediacaoForm.periodo || '-'}
 
 ================================================================================
-TABELA DE MEDICAO DE SERVICOS
+TABELA DE MEDIÇÃO DE SERVIÇOS
 ================================================================================
 
 ${blocoItens || 'Sem registros.'}
 
 ================================================================================
-TABELA DE RECURSOS E HORAS
+RESUMO FINAL DA MEDIÇÃO
 ================================================================================
 
-${blocoRecursos || 'Sem registros.'}
+Total da medição: R$ ${formatDecimal(totalGeralMediacao)}
 
 ================================================================================
 Documento gerado automaticamente pelo Linave ERP
-Geracao: ${dataGeracao}
+Geração: ${dataGeracao}
 ================================================================================
     `;
 
@@ -472,7 +516,7 @@ Geracao: ${dataGeracao}
     elemento.click();
     document.body.removeChild(elemento);
 
-    toast.success('Documento de medicao criado, anexado e baixado com sucesso.');
+    toast.success('Documento de medição criado, anexado e baixado com sucesso.');
     setShowDocumentoMediacaoModal(false);
   };
 
@@ -501,21 +545,8 @@ Geracao: ${dataGeracao}
       toast.error('Documento indisponível para visualização.');
       return;
     }
-
-    if (href.startsWith('data:')) {
-      const blob = dataUrlToBlob(href);
-      if (!blob) {
-        toast.error('Falha ao abrir documento.');
-        return;
-      }
-
-      const objectUrl = URL.createObjectURL(blob);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
-      return;
-    }
-
-    window.open(href, '_blank', 'noopener,noreferrer');
+    setDocumentoVisualizado({ ...doc, href });
+    setShowDocumentoPreviewModal(true);
   };
 
   const handleDownloadDocumento = (doc: any) => {
@@ -962,12 +993,9 @@ Geracao: ${dataGeracao}
         ? selectedObraDetalhes.propostas[selectedObraDetalhes.propostas.length - 1]
         : null;
       const propostaAceita = ultimaProposta?.status === 'aceita';
-      const possuiDocumentoCliente = Boolean(
-        selectedObraDetalhes.documentoClienteAssinado?.conteudo || selectedObraDetalhes.documentoClienteAssinado?.url
-      );
 
-      if (!propostaAceita || !possuiDocumentoCliente) {
-        return alert('Para iniciar o trabalho é obrigatório ter proposta aceita e documento assinado do cliente anexado.');
+      if (!propostaAceita) {
+        return alert('Para iniciar o trabalho é obrigatório ter proposta aceita.');
       }
 
       proximaCategoria = 'Em Andamento';
@@ -1086,13 +1114,7 @@ ESCOPO DE SERVIÇOS
 ================================================================================
 
 A - Escopo Básico:
-${ultimaProposta.escopoA || 'Não preenchido'}
-
-B - Responsabilidade da Contratada:
-${ultimaProposta.responsabilidadeContratada || 'Não preenchido'}
-
-C - Responsabilidade da Contratante:
-${ultimaProposta.escopoC || 'Não preenchido'}
+${formatarEscopoBasicoParaTexto(ultimaProposta.escopoBasicoServicos || ultimaProposta.escopoA || 'Não preenchido')}
 
 ================================================================================
 CONDIÇÕES COMERCIAIS
@@ -1267,21 +1289,20 @@ Geração: ${new Date().toLocaleString('pt-BR')}
     }
   };
 
-  const possuiOSAprovadaComAssinatura = (obraId: string) => {
+  const possuiOSAprovadaParaFinalizacao = (obraId: string) => {
     const osDoNegocio = (os || []).filter((item: any) => item.obraId === obraId);
     return osDoNegocio.some((item: any) => (
       item.statusEnvio === 'enviada'
       && item.statusAprovacao === 'aprovada'
-      && Boolean(item.documentoAssinaturaAprovacao?.conteudo || item.documentoAssinaturaAprovacao?.url)
     ));
   };
 
   const handleAvancarParaFinalizacao = () => {
     if (!selectedObraDetalhes) return;
 
-    const podeFinalizar = possuiOSAprovadaComAssinatura(selectedObraDetalhes.id);
+    const podeFinalizar = possuiOSAprovadaParaFinalizacao(selectedObraDetalhes.id);
     if (!podeFinalizar) {
-      return alert('Para avançar para Finalização é obrigatório ter OS enviada, aprovada e com assinatura anexada.');
+      return alert('Para avançar para Finalização é obrigatório ter OS enviada e aprovada.');
     }
 
     const obraAtualizada = {
@@ -1658,7 +1679,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                                 }}
                                 className="w-full py-2 rounded-lg bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 hover:from-emerald-500/50 hover:to-cyan-500/50 border border-emerald-400/40 text-emerald-200 text-[11px] font-black uppercase tracking-wider transition-all"
                               >
-                                <FileText size={14} className="inline mr-1" /> Criar Documento de Medicao
+                                <FileText size={14} className="inline mr-1" /> Criar Documento de Medição
                               </button>
                             </div>
                           );
@@ -2373,13 +2394,9 @@ Geração: ${new Date().toLocaleString('pt-BR')}
 
                     <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 space-y-3">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-white font-black text-sm">Documento Assinado do Cliente</p>
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                          possuiDocumentoCliente
-                            ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
-                            : 'bg-amber-500/20 border border-amber-500/40 text-amber-300'
-                        }`}>
-                          {possuiDocumentoCliente ? 'Anexado' : 'Pendente'}
+                        <p className="text-white font-black text-sm">Documento do Cliente</p>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-500/20 border border-slate-500/40 text-slate-300">
+                          Opcional
                         </span>
                       </div>
 
@@ -2395,7 +2412,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                         />
                       )}
 
-                      {possuiDocumentoCliente && (
+                      {documentoClienteAssinado && (
                         <div className="bg-[#101f3d] rounded-lg border border-white/10 p-3 space-y-2">
                           <p className="text-white text-xs font-bold truncate">{documentoClienteAssinado.nome}</p>
                           <p className="text-white/50 text-[11px]">{documentoClienteAssinado.tamanho ? formatFileSize(documentoClienteAssinado.tamanho) : 'Tamanho não informado'}</p>
@@ -2426,11 +2443,11 @@ Geração: ${new Date().toLocaleString('pt-BR')}
 
                       {isNegociacao ? (
                         <p className="text-[11px] text-white/40">
-                          Obrigatório para liberar o início do trabalho. O botão "Aprovar e Iniciar" só aparece com proposta aceita e documento anexado.
+                          O início do trabalho depende apenas de proposta aceita.
                         </p>
                       ) : (
                         <p className="text-[11px] text-white/40">
-                          Em andamento: visualização da proposta e do documento assinado do cliente.
+                          Em andamento: visualização da proposta e dos documentos do negócio.
                         </p>
                       )}
                     </div>
@@ -2552,6 +2569,14 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                       >
                         <Eye size={16} /> Ver OS
                       </button>
+                      {Array.isArray(selectedObraDetalhes.orcamentos) && selectedObraDetalhes.orcamentos.length > 0 && (
+                        <button
+                          onClick={() => setShowOrcamentoFullModal(true)}
+                          className="flex-1 bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 hover:from-emerald-500/50 hover:to-cyan-500/50 border border-emerald-400/40 text-emerald-300 hover:text-emerald-200 rounded-lg py-2 font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                        >
+                          <Eye size={16} /> Ver Orçamento
+                        </button>
+                      )}
                       <button
                         onClick={handleDownloadOSPDF}
                         className="flex-1 bg-gradient-to-r from-blue-500/30 to-blue-600/30 hover:from-blue-500/50 hover:to-blue-600/50 border border-blue-400/40 text-blue-300 hover:text-blue-200 rounded-lg py-2 font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2"
@@ -2569,7 +2594,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                     </div>
 
                     <p className="text-[11px] text-white/50">
-                      Para avançar para Finalização: a OS precisa estar enviada, aprovada e com assinatura anexada.
+                      Para avançar para Finalização: a OS precisa estar enviada e aprovada.
                     </p>
 
                     {selectedObraDetalhes.categoria === 'Finalização' && (
@@ -2577,7 +2602,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                         onClick={() => handleAbrirDocumentoMediacao(selectedObraDetalhes)}
                         className="w-full bg-gradient-to-r from-emerald-500/30 to-cyan-500/30 hover:from-emerald-500/50 hover:to-cyan-500/50 border border-emerald-400/40 text-emerald-300 hover:text-emerald-100 rounded-lg py-2.5 font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2"
                       >
-                        <FileText size={16} /> Criar Documento de Medicao
+                        <FileText size={16} /> Criar Documento de Medição
                       </button>
                     )}
                   </div>
@@ -2606,9 +2631,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   const ultimaProposta = Array.isArray(selectedObraDetalhes.propostas) && selectedObraDetalhes.propostas.length > 0
                     ? selectedObraDetalhes.propostas[selectedObraDetalhes.propostas.length - 1]
                     : null;
-                  const podeIniciar = ultimaProposta?.status === 'aceita' && Boolean(
-                    selectedObraDetalhes.documentoClienteAssinado?.conteudo || selectedObraDetalhes.documentoClienteAssinado?.url
-                  );
+                  const podeIniciar = ultimaProposta?.status === 'aceita';
 
                   if (!podeIniciar) return null;
 
@@ -2622,7 +2645,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   );
                 })()}
                 {selectedObraDetalhes.categoria === 'Em Andamento' && (() => {
-                  const podeFinalizar = possuiOSAprovadaComAssinatura(selectedObraDetalhes.id);
+                  const podeFinalizar = possuiOSAprovadaParaFinalizacao(selectedObraDetalhes.id);
                   return (
                     <button
                       onClick={handleAvancarParaFinalizacao}
@@ -2647,14 +2670,14 @@ Geração: ${new Date().toLocaleString('pt-BR')}
         </div>
       )}
 
-      {/* MODAL - DOCUMENTO DE MEDICAO */}
+      {/* MODAL - DOCUMENTO DE MEDIÇÃO */}
       {showDocumentoMediacaoModal && documentoMediacaoForm && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#101f3d] rounded-2xl border border-white/10 shadow-2xl max-w-6xl w-full max-h-[92vh] overflow-y-auto">
             <div className="sticky top-0 z-40 bg-gradient-to-r from-emerald-500/40 to-cyan-500/40 backdrop-blur-md p-8 border-b border-white/10 flex justify-between items-center">
               <div>
-                <h2 className="text-2xl font-black text-white">DOCUMENTO DE MEDICAO</h2>
-                <p className="text-white/60 text-sm mt-2">Preencha os dados e tabelas para gerar a medicao do periodo.</p>
+                <h2 className="text-2xl font-black text-white">DOCUMENTO DE MEDIÇÃO</h2>
+                <p className="text-white/60 text-sm mt-2">Preencha os dados para gerar a medição do período.</p>
               </div>
               <button
                 onClick={() => setShowDocumentoMediacaoModal(false)}
@@ -2694,7 +2717,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   />
                 </div>
                 <div>
-                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Data emissao</p>
+                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Data de emissão</p>
                   <input
                     type="date"
                     value={documentoMediacaoForm.dataEmissao}
@@ -2703,7 +2726,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   />
                 </div>
                 <div>
-                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Embarcacao</p>
+                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Embarcação</p>
                   <input
                     type="text"
                     value={documentoMediacaoForm.embarcacao}
@@ -2723,7 +2746,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   />
                 </div>
                 <div className="col-span-2">
-                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Periodo</p>
+                  <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Período</p>
                   <input
                     type="text"
                     value={documentoMediacaoForm.periodo}
@@ -2735,7 +2758,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
 
               <div className="bg-[#0b1220] rounded-xl border border-white/10 p-6 space-y-4">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-emerald-300 text-lg font-black uppercase">Tabela de Medicao de Servicos</h3>
+                  <h3 className="text-emerald-300 text-lg font-black uppercase">Tabela de Medição de Serviços</h3>
                   <button
                     onClick={adicionarLinhaTabelaItens}
                     className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-xs font-black uppercase"
@@ -2748,12 +2771,13 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                     <thead>
                       <tr className="bg-white/5 text-white/70 uppercase tracking-wider">
                         <th className="border border-white/10 px-3 py-2 text-left">Item</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Descricao</th>
+                        <th className="border border-white/10 px-3 py-2 text-left">Descrição</th>
                         <th className="border border-white/10 px-3 py-2 text-left">Unidade</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Previsto</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Realizado</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Observacoes</th>
-                        <th className="border border-white/10 px-3 py-2 text-center">Acao</th>
+                        <th className="border border-white/10 px-3 py-2 text-left">Quantidade produzida</th>
+                        <th className="border border-white/10 px-3 py-2 text-left">Valor / unidade</th>
+                        <th className="border border-white/10 px-3 py-2 text-left">Total</th>
+                        <th className="border border-white/10 px-3 py-2 text-left">Observações</th>
+                        <th className="border border-white/10 px-3 py-2 text-center">Ação</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2762,8 +2786,9 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                           <td className="border border-white/10 p-1.5"><input value={linha.item} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'item', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
                           <td className="border border-white/10 p-1.5"><input value={linha.descricao} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'descricao', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
                           <td className="border border-white/10 p-1.5"><input value={linha.unidade} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'unidade', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.previsto} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'previsto', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.realizado} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'realizado', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
+                          <td className="border border-white/10 p-1.5"><input value={linha.quantidadeProduzida} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'quantidadeProduzida', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
+                          <td className="border border-white/10 p-1.5"><input value={linha.valorUnitario} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'valorUnitario', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
+                          <td className="border border-white/10 p-1.5"><input value={linha.total} readOnly className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1 text-emerald-300 font-black" /></td>
                           <td className="border border-white/10 p-1.5"><input value={linha.observacoes} onChange={(e) => atualizarLinhaTabelaItens(linha.id, 'observacoes', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
                           <td className="border border-white/10 p-1.5 text-center">
                             <button
@@ -2778,50 +2803,14 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                     </tbody>
                   </table>
                 </div>
-              </div>
 
-              <div className="bg-[#0b1220] rounded-xl border border-white/10 p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-cyan-300 text-lg font-black uppercase">Tabela de Recursos e Horas</h3>
-                  <button
-                    onClick={adicionarLinhaTabelaRecursos}
-                    className="px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 text-cyan-200 text-xs font-black uppercase"
-                  >
-                    + Linha
-                  </button>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[900px] text-xs border-collapse">
-                    <thead>
-                      <tr className="bg-white/5 text-white/70 uppercase tracking-wider">
-                        <th className="border border-white/10 px-3 py-2 text-left">Recurso</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Funcao</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Periodo</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Horas</th>
-                        <th className="border border-white/10 px-3 py-2 text-left">Observacoes</th>
-                        <th className="border border-white/10 px-3 py-2 text-center">Acao</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documentoMediacaoForm.tabelaRecursos.map((linha) => (
-                        <tr key={linha.id} className="text-white">
-                          <td className="border border-white/10 p-1.5"><input value={linha.recurso} onChange={(e) => atualizarLinhaTabelaRecursos(linha.id, 'recurso', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.funcao} onChange={(e) => atualizarLinhaTabelaRecursos(linha.id, 'funcao', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.periodo} onChange={(e) => atualizarLinhaTabelaRecursos(linha.id, 'periodo', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.horas} onChange={(e) => atualizarLinhaTabelaRecursos(linha.id, 'horas', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5"><input value={linha.observacoes} onChange={(e) => atualizarLinhaTabelaRecursos(linha.id, 'observacoes', e.target.value)} className="w-full bg-[#101f3d] border border-white/10 rounded px-2 py-1" /></td>
-                          <td className="border border-white/10 p-1.5 text-center">
-                            <button
-                              onClick={() => removerLinhaTabelaRecursos(linha.id)}
-                              className="px-2 py-1 rounded bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300"
-                            >
-                              <X size={12} className="inline" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="grid grid-cols-1 gap-4">
+                  <div className="bg-[#101f3d] rounded-xl border border-white/10 p-4">
+                    <p className="text-white/50 text-xs mb-1 uppercase font-black tracking-widest">Total da medição</p>
+                    <p className="text-emerald-300 font-black text-lg">
+                      {`R$ ${formatDecimal(documentoMediacaoForm.tabelaItens.reduce((total, linha) => total + parseDecimal(linha.total), 0))}`}
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -2830,7 +2819,7 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                   onClick={handleGerarDocumentoMediacao}
                   className="flex-1 py-3 rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white font-black uppercase text-sm tracking-widest"
                 >
-                  <Download size={16} className="inline mr-2" /> Gerar Documento de Medicao
+                  <Download size={16} className="inline mr-2" /> Gerar Documento de Medição
                 </button>
                 <button
                   onClick={() => setShowDocumentoMediacaoModal(false)}
@@ -2838,6 +2827,72 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                 >
                   Cancelar
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL - PREVIEW DE DOCUMENTO */}
+      {showDocumentoPreviewModal && documentoVisualizado && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-[#101f3d] rounded-2xl border border-white/10 shadow-2xl max-w-6xl w-full max-h-[92vh] overflow-hidden">
+            <div className="sticky top-0 z-40 bg-gradient-to-r from-cyan-500/40 to-blue-500/40 backdrop-blur-md p-6 border-b border-white/10 flex justify-between items-center gap-4">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-black text-white truncate">{documentoVisualizado.nome || 'Documento'}</h2>
+                <p className="text-white/60 text-sm mt-2 truncate">{documentoVisualizado.tipo || 'Tipo não informado'}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDocumentoPreviewModal(false);
+                  setDocumentoVisualizado(null);
+                }}
+                className="p-2 bg-white/5 rounded-full hover:bg-white/10 shrink-0"
+              >
+                <X size={24} className="text-white/60" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-0 max-h-[calc(92vh-92px)]">
+              <div className="bg-[#0b1220] border-r border-white/10 min-h-[60vh]">
+                <iframe
+                  title={documentoVisualizado.nome || 'Documento'}
+                  src={documentoVisualizado.href}
+                  className="w-full h-[70vh] lg:h-[calc(92vh-92px)] bg-white"
+                />
+              </div>
+
+              <div className="p-6 space-y-4 overflow-y-auto max-h-[calc(92vh-92px)]">
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-2">
+                  <p className="text-white/50 text-xs uppercase font-black tracking-widest">Informações</p>
+                  <div className="text-sm space-y-1">
+                    <p className="text-white"><span className="text-white/50">Nome:</span> {documentoVisualizado.nome || '-'}</p>
+                    <p className="text-white"><span className="text-white/50">Tipo:</span> {documentoVisualizado.tipo || '-'}</p>
+                    <p className="text-white"><span className="text-white/50">Tamanho:</span> {documentoVisualizado.tamanho ? formatFileSize(documentoVisualizado.tamanho) : 'Não informado'}</p>
+                    <p className="text-white"><span className="text-white/50">Data:</span> {documentoVisualizado.dataUpload ? new Date(documentoVisualizado.dataUpload).toLocaleString('pt-BR') : '-'}</p>
+                  </div>
+                </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                  <p className="text-white/50 text-xs uppercase font-black tracking-widest mb-2">Ações</p>
+                  <div className="flex flex-col gap-3">
+                    <button
+                      onClick={() => handleDownloadDocumento(documentoVisualizado)}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download size={16} /> Download
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowDocumentoPreviewModal(false);
+                        setDocumentoVisualizado(null);
+                      }}
+                      className="w-full bg-white/10 hover:bg-white/15 text-white py-3 rounded-lg font-black uppercase text-xs tracking-widest transition-all"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -2949,19 +3004,9 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                 {/* Escopos */}
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
                   <h3 className="text-white font-black text-lg">ESCOPOS DE SERVIÇOS</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-white/50 text-xs mb-2 font-black">A - Escopo Básico de Serviços</p>
-                      <p className="text-white whitespace-pre-wrap text-sm">{ultimaProposta.escopoA || '−'}</p>
-                    </div>
-                    <div>
-                      <p className="text-white/50 text-xs mb-2 font-black">B - Responsabilidade da Contratada</p>
-                      <p className="text-white whitespace-pre-wrap text-sm">{ultimaProposta.responsabilidadeContratada || '−'}</p>
-                    </div>
-                    <div>
-                      <p className="text-white/50 text-xs mb-2 font-black">C - Responsabilidade da Contratante</p>
-                      <p className="text-white whitespace-pre-wrap text-sm">{ultimaProposta.escopoC || '−'}</p>
-                    </div>
+                  <div>
+                    <p className="text-white/50 text-xs mb-2 font-black">A - Escopo Básico de Serviços</p>
+                    <p className="text-white whitespace-pre-wrap text-sm">{ultimaProposta.escopoA || '−'}</p>
                   </div>
                 </div>
 
@@ -3047,6 +3092,28 @@ Geração: ${new Date().toLocaleString('pt-BR')}
       {showOSFullModal && selectedObraDetalhes && (() => {
         const osDoNegocio = (os || []).filter(o => o.obraId === selectedObraDetalhes.id);
         if (osDoNegocio.length === 0) return null;
+        const osPrincipal = osDoNegocio[0];
+        const orcamentosBase = Array.isArray(osPrincipal?.orcamentos) && osPrincipal.orcamentos.length > 0
+          ? osPrincipal.orcamentos
+          : Array.isArray(selectedObraDetalhes.orcamentos) && selectedObraDetalhes.orcamentos.length > 0
+            ? selectedObraDetalhes.orcamentos
+            : [];
+        const propostasBase = Array.isArray(osPrincipal?.propostas) && osPrincipal.propostas.length > 0
+          ? osPrincipal.propostas
+          : Array.isArray(selectedObraDetalhes.propostas) && selectedObraDetalhes.propostas.length > 0
+            ? selectedObraDetalhes.propostas
+            : [];
+        const ultimoOrcamento = orcamentosBase.length > 0 ? orcamentosBase[orcamentosBase.length - 1] : null;
+        const ultimaProposta = propostasBase.length > 0 ? propostasBase[propostasBase.length - 1] : null;
+        const documentoClienteAssinado = osPrincipal?.documentoAssinaturaAprovacao || selectedObraDetalhes.documentoClienteAssinado;
+        const documentosDaOS = Array.isArray(osPrincipal?.documentosNegocio) && osPrincipal.documentosNegocio.length > 0
+          ? osPrincipal.documentosNegocio
+          : Array.isArray(selectedObraDetalhes.documentosNegocio) ? selectedObraDetalhes.documentosNegocio : [];
+        const servicosDoNegocio = Array.isArray(selectedObraDetalhes.servicos) ? selectedObraDetalhes.servicos : [];
+        const maoDeObraOS = Array.isArray(ultimoOrcamento?.data?.maoDeObra) ? ultimoOrcamento.data.maoDeObra : [];
+        const materiaisOS = Array.isArray(ultimoOrcamento?.data?.materiais) ? ultimoOrcamento.data.materiais : [];
+        const terceirizadosOS = Array.isArray(ultimoOrcamento?.data?.terceirizados) ? ultimoOrcamento.data.terceirizados : [];
+        const escopoBasicoProposta = formatarEscopoBasicoParaTexto(ultimaProposta?.escopoBasicoServicos || ultimaProposta?.escopoA || '−');
         return (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-[#101f3d] rounded-2xl border border-white/10 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
@@ -3088,6 +3155,216 @@ Geração: ${new Date().toLocaleString('pt-BR')}
                     </div>
                   </div>
                 </div>
+
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-3">
+                  <h3 className="text-white font-black text-lg">SUMÁRIO CONSOLIDADO DA OS</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <p className="text-white/50 text-xs mb-1">CC</p>
+                      <p className="text-white font-bold">{osPrincipal?.cc || 'LN-0731A/26'}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/50 text-xs mb-1">Número OS</p>
+                      <p className="text-white font-bold">{osPrincipal?.ordemServicoNumero || '0731A'}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/50 text-xs mb-1">Emissão</p>
+                      <p className="text-white font-bold">{osPrincipal?.dataEmissao || '02/02/2026'}</p>
+                    </div>
+                    <div>
+                      <p className="text-white/50 text-xs mb-1">Término previsto</p>
+                      <p className="text-white font-bold">{osPrincipal?.dataTerminoPrevisto || '24/02/2026'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Orçamento */}
+                <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-emerald-300 font-black text-lg uppercase">Orçamento</h3>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                      {ultimoOrcamento ? `v${formatarVersaoOrcamento(ultimoOrcamento.versao)}` : 'Sem orçamento'}
+                    </span>
+                  </div>
+                  {ultimoOrcamento ? (
+                    <div className="space-y-4 text-sm">
+                      <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Número</p>
+                          <p className="text-white font-bold">{ultimoOrcamento.numeroOrcamento || '−'}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Solicitante</p>
+                          <p className="text-white font-bold">{osPrincipal?.solicitante || selectedObraDetalhes.solicitante || '−'}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Responsável Comercial</p>
+                          <p className="text-white font-bold">{selectedObraDetalhes.responsavelComercial || '−'}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Documentos referência</p>
+                          <p className="text-white font-bold">Request SOS26M0047 | Request SOS26M0046</p>
+                        </div>
+                      </div>
+
+                      {servicosDoNegocio.length > 0 && (
+                        <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 space-y-2">
+                          <h4 className="text-white font-black text-sm">SERVIÇOS</h4>
+                          <div className="space-y-2">
+                            {servicosDoNegocio.map((servico: any, idx: number) => (
+                              <div key={idx} className="bg-[#111b2f] p-3 rounded text-xs border border-white/5">
+                                <p className="text-white font-bold mb-2">{servico.tipo} {servico.categoria && `- ${servico.categoria}`}</p>
+                                <p className="text-white/70 mb-2 whitespace-pre-wrap">{servico.descricao}</p>
+                                <div className="grid grid-cols-3 gap-2 text-white/50 text-xs">
+                                  {servico.embarcacao && <span>{servico.embarcacao}</span>}
+                                  {servico.localExecucao && <span>{servico.localExecucao}</span>}
+                                  {servico.porto && <span>{servico.porto}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {maoDeObraOS.length > 0 && (
+                        <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 space-y-2">
+                          <h4 className="text-white font-black text-sm">MÃO DE OBRA</h4>
+                          <div className="space-y-1 text-xs">
+                            {maoDeObraOS.map((item: any, idx: number) => (
+                              item.funcao && (
+                                <div key={idx} className="flex justify-between text-white/70">
+                                  <span>{item.funcao} ({item.quantidade}x {item.dias}d)</span>
+                                  <span className="text-white font-bold">Item listado</span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {materiaisOS.length > 0 && (
+                        <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 space-y-2">
+                          <h4 className="text-white font-black text-sm">ITENS COMPRADOS</h4>
+                          <div className="space-y-1 text-xs">
+                            {materiaisOS.map((item: any, idx: number) => (
+                              item.descricao && (
+                                <div key={idx} className="flex justify-between text-white/70">
+                                  <span>{item.descricao} ({item.quantidade} {item.unidade})</span>
+                                  <span className="text-white font-bold">Item listado</span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {terceirizadosOS.length > 0 && (
+                        <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 space-y-2">
+                          <h4 className="text-white font-black text-sm">SERVIÇOS TERCEIRIZADOS</h4>
+                          <div className="space-y-1 text-xs">
+                            {terceirizadosOS.map((item: any, idx: number) => (
+                              item.descricao && (
+                                <div key={idx} className="flex justify-between text-white/70">
+                                  <span>{item.descricao} ({item.quantidade} {item.unidade})</span>
+                                  <span className="text-white font-bold">Item listado</span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-white/50 text-sm">Nenhum orçamento vinculado a esta OS.</p>
+                  )}
+                </div>
+
+                {/* Proposta */}
+                <div className="bg-cyan-500/10 border border-cyan-500/20 rounded-xl p-6 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-cyan-300 font-black text-lg uppercase">Proposta</h3>
+                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-cyan-500/20 border border-cyan-500/40 text-cyan-300">
+                      {ultimaProposta ? `v${ultimaProposta.versao}` : 'Sem proposta'}
+                    </span>
+                  </div>
+                  {ultimaProposta ? (
+                    <div className="space-y-4 text-sm">
+                      <div className="bg-[#0b1220] rounded-lg p-4 border border-white/5 grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Número</p>
+                          <p className="text-white font-bold">{ultimaProposta.numeroProposta || '−'}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Status</p>
+                          <p className="text-white font-bold">{String(ultimaProposta.status || 'pendente').toUpperCase()}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Referência</p>
+                          <p className="text-white font-bold">{ultimaProposta.referencia || 'Seven Ocean - UBU'}</p>
+                        </div>
+                        <div>
+                          <p className="text-white/50 text-xs mb-1">Responsável</p>
+                          <p className="text-white font-bold">{ultimaProposta.atribuidoA || '−'}</p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-4">
+                        <h4 className="text-white font-black text-sm uppercase">Escopo de Serviços</h4>
+                        <div>
+                          <p className="text-white/50 text-xs mb-2 font-black">A - Escopo Básico de Serviços</p>
+                          <p className="text-white whitespace-pre-wrap text-sm">{escopoBasicoProposta}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-white/50 text-sm">Nenhuma proposta vinculada a esta OS.</p>
+                  )}
+                </div>
+
+                {documentoClienteAssinado && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-white font-black text-lg">Documento assinado do cliente</h3>
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-emerald-500/20 border border-emerald-500/40 text-emerald-300">
+                        Anexado
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 bg-[#0b1220] border border-white/5 rounded-lg p-4">
+                      <div className="min-w-0">
+                        <p className="text-white text-sm font-bold truncate">{documentoClienteAssinado.nome || 'Documento assinado'}</p>
+                        <p className="text-white/50 text-xs">{documentoClienteAssinado.tamanho ? formatFileSize(documentoClienteAssinado.tamanho) : 'Tamanho não informado'}</p>
+                      </div>
+                      <button
+                        onClick={() => handleVerDocumentoNegocio(documentoClienteAssinado)}
+                        className="px-3 py-2 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 text-xs font-black uppercase transition"
+                      >
+                        Ver documento
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {documentosDaOS.length > 0 && (
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-3">
+                    <h3 className="text-white font-black text-lg">DOCUMENTOS DA OS</h3>
+                    <div className="space-y-2">
+                      {documentosDaOS.map((doc: any) => (
+                        <div key={doc.id || doc.nome} className="bg-[#0b1220] rounded-lg p-3 border border-white/5 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-white text-sm font-bold truncate">{doc.nome || 'Documento'}</p>
+                            <p className="text-white/40 text-xs">{doc.tamanho ? formatFileSize(doc.tamanho) : 'Tamanho não informado'}</p>
+                          </div>
+                          <button
+                            onClick={() => handleVerDocumentoNegocio(doc)}
+                            className="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 border border-blue-500/40 text-blue-300 text-xs font-black uppercase transition"
+                          >
+                            Ver
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Ordens de Serviço */}
                 <div className="space-y-4">
